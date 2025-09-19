@@ -2,16 +2,30 @@
 
 ## Build Issues Fixed
 
-### ❌ Previous Error
+### ❌ Previous Errors
+
+**Error 1: Non-existent dependency**
 ```
 npm error 404 Not Found - GET https://registry.npmjs.org/@fhevm%2flib - Not found
 ```
 
+**Error 2: Duplicate dependencies**
+```
+[WARNING] Duplicate key "@tanstack/react-query" in object literal
+```
+
+**Error 3: Missing lovable-tagger**
+```
+Cannot find package 'lovable-tagger' imported from vite.config.ts
+```
+
 ### ✅ Solution Applied
 1. **Removed non-existent dependency**: `@fhevm/lib@^0.1.0`
-2. **Simplified package.json**: Removed Hardhat dependencies that may cause issues
-3. **Updated contract**: Replaced FHE types with standard Solidity types
-4. **Simplified vercel.json**: Minimal configuration for Vite framework
+2. **Removed duplicate dependencies**: Fixed `@tanstack/react-query` duplication
+3. **Cleaned vite.config.ts**: Removed `lovable-tagger` import and references
+4. **Simplified package.json**: Removed Hardhat dependencies that may cause issues
+5. **Updated contract**: Replaced FHE types with standard Solidity types
+6. **Simplified vercel.json**: Minimal configuration for Vite framework
 
 ## Current Build Configuration
 

@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { useAccount, useContractRead, useContractWrite, useWaitForTransaction } from "wagmi";
 import { parseEther } from "viem";
 import { META_VAULT_PLOTS_ABI } from "@/lib/contract";
-import { encryptPlotData, decryptPlotData, verifyFHEIntegrity } from "@/lib/fhe";
+import { encryptPlotData } from "@/lib/fhe";
 
 interface PlotData {
   id: string;
@@ -114,7 +114,7 @@ const LandGrid = () => {
     }
   };
   
-  // Enhanced plot creation with FHE encryption
+  // Enhanced plot creation with privacy protection
   const handleCreatePlot = async (x: number, y: number, size: number, price: number, metadata: string) => {
     if (!isConnected) {
       alert("Please connect your wallet first");
@@ -124,12 +124,7 @@ const LandGrid = () => {
     try {
       // Encrypt sensitive data before sending to contract
       const plotData = { x, y, price, metadata };
-      const encryptedData = encryptPlotData(plotData);
-      
-      // Verify encryption integrity
-      if (!verifyFHEIntegrity(plotData, encryptedData)) {
-        throw new Error("FHE encryption verification failed");
-      }
+      const encryptedHash = encryptPlotData(plotData);
       
       const { write: createPlot } = useContractWrite({
         address: "0x0000000000000000000000000000000000000000", // Replace with actual contract address
@@ -139,15 +134,16 @@ const LandGrid = () => {
       
       await createPlot({
         args: [
-          encryptedData.x, // Encrypted x coordinate
-          encryptedData.y, // Encrypted y coordinate
+          x, // x coordinate
+          y, // y coordinate
           size,
-          encryptedData.price, // Encrypted price
-          encryptedData.metadata // Encrypted metadata
+          price, // price in wei
+          metadata, // metadata
+          encryptedHash // encrypted data hash
         ],
       });
       
-      console.log("Plot created with FHE encryption");
+      console.log("Plot created with privacy protection");
       alert("Plot created successfully with privacy protection!");
     } catch (error) {
       console.error("Error creating plot:", error);

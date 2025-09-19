@@ -84,7 +84,6 @@
     "vite": "^5.4.19",
     "@nomicfoundation/hardhat-toolbox": "^5.0.0",
     "@nomicfoundation/hardhat-verify": "^2.0.0",
-    "hardhat": "^2.22.0",
-    "@fhevm/lib": "^0.1.0"
+    "hardhat": "^2.22.0"
   }
 }

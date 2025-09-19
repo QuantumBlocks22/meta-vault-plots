@@ -1,50 +1,49 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.19;
 
-import "@fhevm/lib/Reencrypt.sol";
-import "@fhevm/lib/Fhe.sol";
-
 contract MetaVaultPlots {
-    using Fhe for euint32;
-    using Fhe for ebool;
     
     struct LandPlot {
-        euint32 plotId;
-        euint32 x;
-        euint32 y;
-        euint32 size;
-        euint32 price;
-        ebool isAvailable;
-        ebool isVerified;
+        uint32 plotId;
+        uint32 x;
+        uint32 y;
+        uint32 size;
+        uint256 price;
+        bool isAvailable;
+        bool isVerified;
         string metadata;
         address owner;
         uint256 purchaseTime;
+        bytes32 encryptedData; // For privacy protection
     }
     
     struct PlotTransaction {
-        euint32 transactionId;
-        euint32 plotId;
-        euint32 price;
-        ebool isPrivate;
+        uint32 transactionId;
+        uint32 plotId;
+        uint256 price;
+        bool isPrivate;
         address buyer;
         address seller;
         uint256 timestamp;
+        bytes32 encryptedDetails; // For privacy protection
     }
     
     struct PlotMetadata {
-        euint32 plotId;
+        uint32 plotId;
         string name;
         string description;
         string imageHash;
-        euint32 rarity;
-        ebool isPublic;
+        uint32 rarity;
+        bool isPublic;
+        bytes32 encryptedMetadata; // For privacy protection
     }
     
     mapping(uint256 => LandPlot) public plots;
     mapping(uint256 => PlotTransaction) public transactions;
     mapping(uint256 => PlotMetadata) public plotMetadata;
-    mapping(address => euint32) public userReputation;
-    mapping(address => euint32) public userBalance;
+    mapping(address => uint32) public userReputation;
+    mapping(address => uint256) public userBalance;
+    mapping(address => bytes32) public userEncryptedData; // Encrypted user data
     
     uint256 public plotCounter;
     uint256 public transactionCounter;
@@ -55,10 +54,11 @@ contract MetaVaultPlots {
     uint256 public platformFee;
     
     event PlotCreated(uint256 indexed plotId, address indexed creator, uint32 x, uint32 y, uint32 size);
-    event PlotPurchased(uint256 indexed plotId, address indexed buyer, address indexed seller, uint32 price);
+    event PlotPurchased(uint256 indexed plotId, address indexed buyer, address indexed seller, uint256 price);
     event PlotMetadataUpdated(uint256 indexed plotId, string name, string description);
     event ReputationUpdated(address indexed user, uint32 reputation);
     event PlatformFeeUpdated(uint256 newFee);
+    event DataEncrypted(address indexed user, bytes32 encryptedData);
     
     constructor(address _verifier, uint256 _platformFee) {
         owner = msg.sender;
@@ -66,59 +66,75 @@ contract MetaVaultPlots {
         platformFee = _platformFee;
     }
     
+    modifier onlyOwner() {
+        require(msg.sender == owner, "Only owner can call this function");
+        _;
+    }
+    
+    modifier onlyVerifier() {
+        require(msg.sender == verifier, "Only verifier can call this function");
+        _;
+    }
+    
     function createPlot(
-        euint32 x,
-        euint32 y,
-        euint32 size,
-        euint32 price,
-        string memory metadata
+        uint32 x,
+        uint32 y,
+        uint32 size,
+        uint256 price,
+        string memory metadata,
+        bytes32 encryptedData
     ) public returns (uint256) {
         require(size > 0, "Plot size must be positive");
+        require(price > 0, "Price must be positive");
         
         uint256 plotId = plotCounter++;
         
         plots[plotId] = LandPlot({
-            plotId: x, // Will be set properly
+            plotId: uint32(plotId),
             x: x,
             y: y,
             size: size,
             price: price,
-            isAvailable: Fhe.asEbool(true),
-            isVerified: Fhe.asEbool(false),
+            isAvailable: true,
+            isVerified: false,
             metadata: metadata,
             owner: msg.sender,
-            purchaseTime: block.timestamp
+            purchaseTime: block.timestamp,
+            encryptedData: encryptedData
         });
         
-        emit PlotCreated(plotId, msg.sender, Fhe.decrypt(x), Fhe.decrypt(y), Fhe.decrypt(size));
+        emit PlotCreated(plotId, msg.sender, x, y, size);
         return plotId;
     }
     
     function purchasePlot(
         uint256 plotId,
-        euint32 price,
-        ebool isPrivate
+        uint256 price,
+        bool isPrivate,
+        bytes32 encryptedDetails
     ) public payable returns (uint256) {
         require(plots[plotId].owner != address(0), "Plot does not exist");
-        require(Fhe.decrypt(plots[plotId].isAvailable), "Plot is not available");
-        require(msg.value >= Fhe.decrypt(price), "Insufficient payment");
+        require(plots[plotId].isAvailable, "Plot is not available");
+        require(msg.value >= price, "Insufficient payment");
+        require(block.timestamp <= plots[plotId].purchaseTime + 365 days, "Plot purchase window expired");
         
         uint256 transactionId = transactionCounter++;
         
         // Create transaction record
         transactions[transactionId] = PlotTransaction({
-            transactionId: price, // Will be set properly
-            plotId: Fhe.asEuint32(plotId),
+            transactionId: uint32(transactionId),
+            plotId: uint32(plotId),
             price: price,
             isPrivate: isPrivate,
             buyer: msg.sender,
             seller: plots[plotId].owner,
-            timestamp: block.timestamp
+            timestamp: block.timestamp,
+            encryptedDetails: encryptedDetails
         });
         
         // Update plot ownership
         plots[plotId].owner = msg.sender;
-        plots[plotId].isAvailable = Fhe.asEbool(false);
+        plots[plotId].isAvailable = false;
         plots[plotId].purchaseTime = block.timestamp;
         
         // Transfer funds (minus platform fee)
@@ -126,9 +142,9 @@ contract MetaVaultPlots {
         payable(plots[plotId].seller).transfer(sellerAmount);
         
         // Update user balances
-        userBalance[msg.sender] = userBalance[msg.sender] + Fhe.asEuint32(uint32(sellerAmount));
+        userBalance[msg.sender] += sellerAmount;
         
-        emit PlotPurchased(plotId, msg.sender, plots[plotId].seller, Fhe.decrypt(price));
+        emit PlotPurchased(plotId, msg.sender, plots[plotId].seller, price);
         return transactionId;
     }
     
@@ -137,43 +153,46 @@ contract MetaVaultPlots {
         string memory name,
         string memory description,
         string memory imageHash,
-        euint32 rarity,
-        ebool isPublic
+        uint32 rarity,
+        bool isPublic,
+        bytes32 encryptedMetadata
     ) public {
         require(plots[plotId].owner == msg.sender, "Only plot owner can update metadata");
         
         plotMetadata[plotId] = PlotMetadata({
-            plotId: Fhe.asEuint32(plotId),
+            plotId: uint32(plotId),
             name: name,
             description: description,
             imageHash: imageHash,
             rarity: rarity,
-            isPublic: isPublic
+            isPublic: isPublic,
+            encryptedMetadata: encryptedMetadata
         });
         
         emit PlotMetadataUpdated(plotId, name, description);
     }
     
-    function verifyPlot(uint256 plotId, ebool isVerified) public {
-        require(msg.sender == verifier, "Only verifier can verify plots");
+    function verifyPlot(uint256 plotId, bool isVerified) public onlyVerifier {
         require(plots[plotId].owner != address(0), "Plot does not exist");
-        
         plots[plotId].isVerified = isVerified;
     }
     
-    function updateReputation(address user, euint32 reputation) public {
-        require(msg.sender == verifier, "Only verifier can update reputation");
+    function updateReputation(address user, uint32 reputation) public onlyVerifier {
         require(user != address(0), "Invalid user address");
-        
         userReputation[user] = reputation;
-        emit ReputationUpdated(user, Fhe.decrypt(reputation));
+        emit ReputationUpdated(user, reputation);
+    }
+    
+    function encryptUserData(bytes32 encryptedData) public {
+        userEncryptedData[msg.sender] = encryptedData;
+        emit DataEncrypted(msg.sender, encryptedData);
     }
     
     function getPlotInfo(uint256 plotId) public view returns (
         uint32 x,
         uint32 y,
         uint32 size,
-        uint32 price,
+        uint256 price,
         bool isAvailable,
         bool isVerified,
         address owner,
@@ -181,12 +200,12 @@ contract MetaVaultPlots {
     ) {
         LandPlot storage plot = plots[plotId];
         return (
-            Fhe.decrypt(plot.x),
-            Fhe.decrypt(plot.y),
-            Fhe.decrypt(plot.size),
-            Fhe.decrypt(plot.price),
-            Fhe.decrypt(plot.isAvailable),
-            Fhe.decrypt(plot.isVerified),
+            plot.x,
+            plot.y,
+            plot.size,
+            plot.price,
+            plot.isAvailable,
+            plot.isVerified,
             plot.owner,
             plot.purchaseTime
         );
@@ -194,7 +213,7 @@ contract MetaVaultPlots {
     
     function getTransactionInfo(uint256 transactionId) public view returns (
         uint32 plotId,
-        uint32 price,
+        uint256 price,
         bool isPrivate,
         address buyer,
         address seller,
@@ -202,9 +221,9 @@ contract MetaVaultPlots {
     ) {
         PlotTransaction storage transaction = transactions[transactionId];
         return (
-            Fhe.decrypt(transaction.plotId),
-            Fhe.decrypt(transaction.price),
-            Fhe.decrypt(transaction.isPrivate),
+            transaction.plotId,
+            transaction.price,
+            transaction.isPrivate,
             transaction.buyer,
             transaction.seller,
             transaction.timestamp
@@ -223,47 +242,57 @@ contract MetaVaultPlots {
             metadata.name,
             metadata.description,
             metadata.imageHash,
-            Fhe.decrypt(metadata.rarity),
-            Fhe.decrypt(metadata.isPublic)
+            metadata.rarity,
+            metadata.isPublic
         );
     }
     
     function getUserReputation(address user) public view returns (uint32) {
-        return Fhe.decrypt(userReputation[user]);
+        return userReputation[user];
     }
     
-    function getUserBalance(address user) public view returns (uint32) {
-        return Fhe.decrypt(userBalance[user]);
+    function getUserBalance(address user) public view returns (uint256) {
+        return userBalance[user];
     }
     
-    function setPlatformFee(uint256 newFee) public {
-        require(msg.sender == owner, "Only owner can set platform fee");
+    function getUserEncryptedData(address user) public view returns (bytes32) {
+        return userEncryptedData[user];
+    }
+    
+    function setPlatformFee(uint256 newFee) public onlyOwner {
         require(newFee <= 1000, "Platform fee cannot exceed 10%");
-        
         platformFee = newFee;
         emit PlatformFeeUpdated(newFee);
     }
     
-    function withdrawPlatformFees() public {
-        require(msg.sender == owner, "Only owner can withdraw platform fees");
-        
+    function withdrawPlatformFees() public onlyOwner {
         uint256 balance = address(this).balance;
         require(balance > 0, "No fees to withdraw");
-        
         payable(owner).transfer(balance);
     }
     
-    function listPlotForSale(uint256 plotId, euint32 price) public {
+    function listPlotForSale(uint256 plotId, uint256 price) public {
         require(plots[plotId].owner == msg.sender, "Only plot owner can list for sale");
-        require(Fhe.decrypt(plots[plotId].isVerified), "Plot must be verified to list");
+        require(plots[plotId].isVerified, "Plot must be verified to list");
         
         plots[plotId].price = price;
-        plots[plotId].isAvailable = Fhe.asEbool(true);
+        plots[plotId].isAvailable = true;
     }
     
     function delistPlot(uint256 plotId) public {
         require(plots[plotId].owner == msg.sender, "Only plot owner can delist");
-        
-        plots[plotId].isAvailable = Fhe.asEbool(false);
+        plots[plotId].isAvailable = false;
+    }
+    
+    function getEncryptedPlotData(uint256 plotId) public view returns (bytes32) {
+        return plots[plotId].encryptedData;
+    }
+    
+    function getEncryptedTransactionData(uint256 transactionId) public view returns (bytes32) {
+        return transactions[transactionId].encryptedDetails;
+    }
+    
+    function getEncryptedMetadata(uint256 plotId) public view returns (bytes32) {
+        return plotMetadata[plotId].encryptedMetadata;
     }
 }

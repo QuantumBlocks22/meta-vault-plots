@@ -4,6 +4,8 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { useAccount, useContractRead, useContractWrite, useWaitForTransaction } from "wagmi";
 import { parseEther } from "viem";
+import { META_VAULT_PLOTS_ABI } from "@/lib/contract";
+import { encryptPlotData, decryptPlotData, verifyFHEIntegrity } from "@/lib/fhe";
 
 interface PlotData {
   id: string;
@@ -109,6 +111,47 @@ const LandGrid = () => {
     } catch (error) {
       console.error("Error delisting plot:", error);
       alert("Failed to delist plot");
+    }
+  };
+  
+  // Enhanced plot creation with FHE encryption
+  const handleCreatePlot = async (x: number, y: number, size: number, price: number, metadata: string) => {
+    if (!isConnected) {
+      alert("Please connect your wallet first");
+      return;
+    }
+    
+    try {
+      // Encrypt sensitive data before sending to contract
+      const plotData = { x, y, price, metadata };
+      const encryptedData = encryptPlotData(plotData);
+      
+      // Verify encryption integrity
+      if (!verifyFHEIntegrity(plotData, encryptedData)) {
+        throw new Error("FHE encryption verification failed");
+      }
+      
+      const { write: createPlot } = useContractWrite({
+        address: "0x0000000000000000000000000000000000000000", // Replace with actual contract address
+        abi: META_VAULT_PLOTS_ABI,
+        functionName: "createPlot",
+      });
+      
+      await createPlot({
+        args: [
+          encryptedData.x, // Encrypted x coordinate
+          encryptedData.y, // Encrypted y coordinate
+          size,
+          encryptedData.price, // Encrypted price
+          encryptedData.metadata // Encrypted metadata
+        ],
+      });
+      
+      console.log("Plot created with FHE encryption");
+      alert("Plot created successfully with privacy protection!");
+    } catch (error) {
+      console.error("Error creating plot:", error);
+      alert("Failed to create plot");
     }
   };
 
@@ -260,6 +303,26 @@ const LandGrid = () => {
                   </Button>
                 </div>
               )}
+              
+              {/* Create New Plot Button */}
+              <div className="pt-4 border-t border-border/50">
+                <Button 
+                  className="w-full bg-gradient-to-r from-primary to-secondary text-white hover:from-primary/80 hover:to-secondary/80"
+                  onClick={() => handleCreatePlot(
+                    selectedPlot?.x || 0, 
+                    selectedPlot?.y || 0, 
+                    1, 
+                    selectedPlot?.price || 0.1, 
+                    `Plot at ${selectedPlot?.x || 0},${selectedPlot?.y || 0}`
+                  )}
+                  disabled={!isConnected}
+                >
+                  {isConnected ? 'Create Encrypted Plot' : 'Connect Wallet to Create Plot'}
+                </Button>
+                <p className="text-xs text-muted-foreground text-center mt-2">
+                  🔐 Data will be encrypted before blockchain storage
+                </p>
+              </div>
             </div>
           ) : (
             <div className="flex items-center justify-center h-full text-center">
